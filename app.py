@@ -314,5 +314,8 @@ def update_table(handed_filter):
 # ------------------------
 # Run server
 # ------------------------
-if __name__ == '__main__':
-    app.run(debug=True, port=8051)
+import os
+
+if __name__ == "__main__":
+    app.run_server(host="0.0.0.0", port=int(os.environ.get("PORT", 8050)))
+
