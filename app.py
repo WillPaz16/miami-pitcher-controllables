@@ -6,31 +6,31 @@ import dash
 from dash import Dash, dcc, html, dash_table
 from dash.dependencies import Input, Output
 
-###########################################################################
-# Import Data
-###########################################################################
+# ------------------------
+# Load preprocessed 2024 reference metrics (small CSVs)
+# ------------------------
+pitcher_metrics_ref = pd.read_csv("pitcher_metrics_overall.csv")
+pitcher_metrics_ref_lhh = pd.read_csv("pitcher_metrics_lhh.csv")
+pitcher_metrics_ref_rhh = pd.read_csv("pitcher_metrics_rhh.csv")
 
-# 2024 reference dataset
-data_2024 = pd.read_csv("2024TMDataWhole.csv")
-
-# New game data
+# ------------------------
+# Load new game data
+# ------------------------
 csv_files = glob.glob("Demo CSVs/*.csv")
 df_list = [pd.read_csv(file) for file in csv_files]
 final_df = pd.concat(df_list, ignore_index=True)
 final_df.columns = [col.lower() for col in final_df.columns]
 final_df = final_df[final_df['pitcherteam'] == 'MIA_RED']
 
-###########################################################################
+# ------------------------
 # Load xBABIP Model
-###########################################################################
-
+# ------------------------
 xBABIP_Model = CatBoostClassifier()
 xBABIP_Model.load_model("xBABIP_Model.cbm")
 
-###########################################################################
+# ------------------------
 # Metric Functions
-###########################################################################
-
+# ------------------------
 def define_strike_zone(df, top=3.5, bottom=1.5, left=-0.708, right=0.708):
     df['zone'] = (
         (df['platelocheight'] >= bottom) &
@@ -40,7 +40,6 @@ def define_strike_zone(df, top=3.5, bottom=1.5, left=-0.708, right=0.708):
     )
     return df
 
-# STRIKE metrics
 def calc_strike_metrics(df):
     df = define_strike_zone(df)
     df['strike'] = df['pitchcall'].isin(['StrikeCalled', 'StrikeSwinging', 'FoulBallFieldable', 'FoulBallNotFieldable'])
@@ -57,7 +56,6 @@ def calc_strike_metrics(df):
     ).reset_index()
     return agg
 
-# MISSING BATS (updated to include Out-of-Zone Miss)
 def calc_miss_metrics(df):
     df['miss'] = df['pitchcall'] == 'StrikeSwinging'
     df['in_zone_miss'] = df['miss'] & df['zone']
@@ -70,10 +68,8 @@ def calc_miss_metrics(df):
     ).reset_index()
     return agg
 
-# WEAK CONTACT
 def calc_weak_contact(df, model):
     hitCols = ['exitspeed', 'angle', 'hitspinrate', 'distance', 'bearing']
-
     df['xbabip'] = np.nan
     inplay_mask = df['pitchcall'] == 'InPlay'
     inplay_data = df.loc[inplay_mask, :]
@@ -93,35 +89,30 @@ def calc_weak_contact(df, model):
     ).reset_index()
     return agg
 
-###########################################################################
-# Aggregate Metrics
-###########################################################################
-
+# ------------------------
+# Aggregate Metrics for new game data
+# ------------------------
 strike_df = calc_strike_metrics(final_df)
 miss_df = calc_miss_metrics(final_df)
 weak_df = calc_weak_contact(final_df, xBABIP_Model)
 
 pitcher_metrics = strike_df.merge(miss_df, on='pitcher').merge(weak_df, on='pitcher')
 
-# Aggregate 2024 reference metrics
-strike_2024 = calc_strike_metrics(data_2024)
-miss_2024 = calc_miss_metrics(data_2024)
-weak_2024 = calc_weak_contact(data_2024, xBABIP_Model)
-pitcher_metrics_2024 = strike_2024.merge(miss_2024, on='pitcher').merge(weak_2024, on='pitcher')
+# ------------------------
+# Percentiles relative to 2024 reference
+# ------------------------
+metrics = ['strike_pct', 'zone_pct', 'chase_pct', 'swing_pct', 'called_strike_pct',
+           'miss_pct', 'in_zone_miss_pct', 'out_zone_miss_pct', 'xbabip', 'gb_pct']
 
-# Percentiles relative to 2024
 def add_percentiles_relative(df, reference_df, metric_cols):
     for col in metric_cols:
         ref_values = reference_df[col].dropna().values
         df[col + '_pct'] = df[col].apply(lambda x: (ref_values < x).mean() * 100)
     return df
 
-metrics = ['strike_pct', 'zone_pct', 'chase_pct', 'swing_pct', 'called_strike_pct',
-           'miss_pct', 'in_zone_miss_pct', 'out_zone_miss_pct', 'xbabip', 'gb_pct']
+pitcher_metrics = add_percentiles_relative(pitcher_metrics, pitcher_metrics_ref, metrics)
 
-pitcher_metrics = add_percentiles_relative(pitcher_metrics, pitcher_metrics_2024, metrics)
-
-# LHH / RHH metrics
+# LHH / RHH splits
 df_lhh = final_df[final_df['batterside'] == 'Left'].copy()
 df_rhh = final_df[final_df['batterside'] == 'Right'].copy()
 
@@ -129,29 +120,23 @@ pitcher_metrics_lhh = add_percentiles_relative(
     calc_strike_metrics(df_lhh)
     .merge(calc_miss_metrics(df_lhh), on='pitcher')
     .merge(calc_weak_contact(df_lhh, xBABIP_Model), on='pitcher'),
-    pitcher_metrics_2024, metrics
+    pitcher_metrics_ref, metrics
 )
 
 pitcher_metrics_rhh = add_percentiles_relative(
     calc_strike_metrics(df_rhh)
     .merge(calc_miss_metrics(df_rhh), on='pitcher')
     .merge(calc_weak_contact(df_rhh, xBABIP_Model), on='pitcher'),
-    pitcher_metrics_2024, metrics
+    pitcher_metrics_ref, metrics
 )
 
-###########################################################################
+# ------------------------
 # Dash App
-###########################################################################
-
+# ------------------------
 import dash
-from dash import Dash, dcc, html, dash_table
+from dash import dcc, html, dash_table
 from dash.dependencies import Input, Output
-import numpy as np
-import pandas as pd
 
-# ------------------------
-# Metrics grouped by category
-# ------------------------
 categories = {
     "Strikes": [
         'strike_pct', 'zone_pct', 'chase_pct', 'swing_pct', 'called_strike_pct'
@@ -164,7 +149,6 @@ categories = {
     ]
 }
 
-# Map raw metric names to aesthetic titles
 column_name_map = {
     "pitcher": "Player",
     "strike_pct": "K",
@@ -181,37 +165,20 @@ column_name_map = {
 
 metrics = [m for group in categories.values() for m in group]
 
-# ------------------------
-# Build multi-level column definitions
-# ------------------------
 columns = [{"name": ["", "Player"], "id": "pitcher"}]
 for cat, cols in categories.items():
     for col in cols:
         col_name = column_name_map.get(col, col)
-        columns.append({
-            "name": [cat, col_name, "Value"], 
-            "id": col
-        })
-        columns.append({
-            "name": [cat, col_name, "Percentile"], 
-            "id": f"{col}_pct"
-        })
+        columns.append({"name": [cat, col_name, "Value"], "id": col})
+        columns.append({"name": [cat, col_name, "Percentile"], "id": f"{col}_pct"})
 
-# ------------------------
-# Initialize app
-# ------------------------
-app = Dash(__name__)
-server = app.server
+app = dash.Dash(__name__)
+server = app.server 
 
 app.layout = html.Div([
-    html.H1("Miami Baseball Pitcher Controllables Dashboard", style={
-        'textAlign': 'center', 'color': '#2c3e50', 'fontFamily': 'Arial', 'marginBottom': '20px'
-    }),
-
+    html.H1("Miami Baseball Pitcher Controllables Dashboard", style={'textAlign': 'center', 'color': '#2c3e50'}),
     html.Div([
-        html.Label("Filter by Batter Handedness:", style={
-            'fontWeight': 'bold', 'marginRight': '10px', 'fontSize': '16px'
-        }),
+        html.Label("Filter by Batter Handedness:"),
         dcc.RadioItems(
             id='handed-filter',
             options=[
@@ -220,11 +187,9 @@ app.layout = html.Div([
                 {'label': 'Vs RHH', 'value': 'RHH'}
             ],
             value='Overall',
-            inline=True,
-            style={'fontSize': '16px', 'marginLeft': '10px'}
+            inline=True
         )
     ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'marginBottom': '20px'}),
-
     dash_table.DataTable(
         id='pitcher-table',
         columns=columns,
@@ -232,20 +197,8 @@ app.layout = html.Div([
         sort_action='native',
         filter_action='native',
         style_table={'overflowX': 'auto', 'margin': '0 auto', 'width': '95%'},
-        style_header={
-            'backgroundColor': '#2f3640',
-            'color': 'white',
-            'fontWeight': 'bold',
-            'textAlign': 'center',
-            'fontSize': '14px',
-            'border': '1px solid #2c3e50'
-        },
-        style_cell={
-            'textAlign': 'center',
-            'padding': '8px',
-            'fontSize': '14px',
-            'fontFamily': 'Arial'
-        },
+        style_header={'backgroundColor': '#2f3640','color': 'white','fontWeight': 'bold','textAlign': 'center'},
+        style_cell={'textAlign': 'center','padding': '8px'},
         style_data_conditional=[]
     )
 ])
@@ -272,18 +225,10 @@ def percentile_color_rules(metric_cols, step=1):
             mid = lower + (upper - lower) / 2.0
             color = color_from_percentile(mid / 100.0)
             rules.append({
-                'if': {
-                    'filter_query': f'{{{pct_col}}} >= {lower} && {{{pct_col}}} < {upper}',
-                    'column_id': pct_col
-                },
-                'backgroundColor': color,
-                'color': 'black'
+                'if': {'filter_query': f'{{{pct_col}}} >= {lower} && {{{pct_col}}} < {upper}','column_id': pct_col},
+                'backgroundColor': color,'color': 'black'
             })
-        rules.append({
-            'if': {'filter_query': f'{{{pct_col}}} = 100', 'column_id': pct_col},
-            'backgroundColor': color_from_percentile(1.0),
-            'color': 'black'
-        })
+        rules.append({'if': {'filter_query': f'{{{pct_col}}} = 100','column_id': pct_col},'backgroundColor': color_from_percentile(1.0),'color': 'black'})
     return rules
 
 # ------------------------
@@ -302,7 +247,6 @@ def update_table(handed_filter):
     else:
         df = pitcher_metrics_rhh.copy()
 
-    # Convert all metric values to percentages (0–100) and round to 1 decimal
     for col in metrics:
         df[col] = pd.to_numeric(df[col], errors='coerce') * 100
         df[col] = df[col].round(1)
@@ -318,4 +262,5 @@ import os
 
 if __name__ == "__main__":
     app.run_server(host="0.0.0.0", port=int(os.environ.get("PORT", 8050)))
+
 
