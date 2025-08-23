@@ -129,7 +129,7 @@ for cat, cols in categories.items():
 # ------------------------
 # Dash App
 # ------------------------
-app = dash.Dash(__name__)
+app = Dash(__name__)
 server = app.server
 
 # Extract unique pitch types from Demo CSVs
