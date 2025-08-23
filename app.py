@@ -248,8 +248,14 @@ def update_table(handed_filter):
         df = pitcher_metrics_rhh.copy()
 
     for col in metrics:
-        df[col] = pd.to_numeric(df[col], errors='coerce') * 100
-        df[col] = df[col].round(1)
+        # For value columns: scale everything *except xBABIP* to percentages
+        if col != 'xbabip':
+            df[col] = pd.to_numeric(df[col], errors='coerce') * 100
+            df[col] = df[col].round(1)
+        else:
+            df[col] = pd.to_numeric(df[col], errors='coerce').round(3)  # keep 3 decimal places
+
+        # Percentile columns are always percentages
         df[col + '_pct'] = pd.to_numeric(df[col + '_pct'], errors='coerce').round(1)
 
     styles = percentile_color_rules(metrics, step=1)
