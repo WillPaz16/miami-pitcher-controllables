@@ -137,27 +137,44 @@ pitch_types_demo = demo_df['taggedpitchtype'].dropna().unique()
 pitch_types_options = [{'label': 'All', 'value': 'All'}] + [{'label': pt, 'value': pt} for pt in pitch_types_demo]
 
 app.layout = html.Div([
-    html.H1("Miami Baseball Pitcher Controllables Dashboard", style={'textAlign': 'center', 'color': '#2c3e50'}),
+    html.H1(
+        "Miami Baseball Pitcher Controllables Dashboard", 
+        style={'textAlign': 'center', 'color': '#2c3e50'}
+    ),
     html.Div([
-        html.Label("Filter by Batter Handedness:"),
-        dcc.RadioItems(
-            id='handed-filter',
-            options=[
-                {'label': 'Overall', 'value': 'Overall'},
-                {'label': 'Vs LHH', 'value': 'LHH'},
-                {'label': 'Vs RHH', 'value': 'RHH'}
-            ],
-            value='Overall',
-            inline=True
-        ),
-        html.Label("Filter by Pitch Type:", style={'marginLeft': '20px'}),
-        dcc.Dropdown(
-            id='pitchtype-filter',
-            options=pitch_types_options,
-            value='All',
-            clearable=False
-        )
-    ], style={'display': 'flex', 'alignItems': 'center', 'justifyContent': 'center', 'marginBottom': '20px'}),
+        # Batter Handedness filter
+        html.Div([
+            html.Label("Filter by Batter Handedness:", style={'marginRight': '10px'}),
+            dcc.RadioItems(
+                id='handed-filter',
+                options=[
+                    {'label': 'Overall', 'value': 'Overall'},
+                    {'label': 'Vs LHH', 'value': 'LHH'},
+                    {'label': 'Vs RHH', 'value': 'RHH'}
+                ],
+                value='Overall',
+                inline=True
+            )
+        ], style={'display': 'flex', 'alignItems': 'center'}),
+        
+        # Pitch Type filter
+        html.Div([
+            html.Label("Filter by Pitch Type:", style={'marginRight': '10px'}),
+            dcc.Dropdown(
+                id='pitchtype-filter',
+                options=pitch_types_options,
+                value='All',
+                clearable=False,
+                style={'width': '300px'}
+            )
+        ], style={'display': 'flex', 'alignItems': 'center', 'marginLeft': '40px'})
+    ], style={
+        'display': 'flex', 
+        'alignItems': 'center', 
+        'justifyContent': 'center', 
+        'marginBottom': '20px'
+    }),
+    
     dash_table.DataTable(
         id='pitcher-table',
         columns=columns,
